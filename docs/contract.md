@@ -72,4 +72,4 @@ Contract-Version: v0.1.0
 - 자동 커밋/푸시 금지(MVP)
 - 비밀정보(키/토큰) 출력 금지
 
-# test change
+# test change 
