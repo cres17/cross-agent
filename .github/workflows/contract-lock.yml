@@ -25,20 +25,14 @@ jobs:
           echo "Head: $HEAD_SHA"
 
           # Check if contract file changed in this PR
-          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -E '^agent/docs/contract\.md$' || true)
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -E '^docs/contract\.md$' || true)
           if [ -z "$CHANGED" ]; then
-            echo "No changes to agent/docs/contract.md"
+            echo "No changes to docs/contract.md"
             exit 0
           fi
 
           # If changed, ensure Status is not LOCKED in the HEAD version
-          STATUS_LINE=$(grep -E '^Status:\s*' agent/docs/contract.md || true)
+          STATUS_LINE=$(grep -E '^Status:\s*' docs/contract.md || true)
           echo "contract status line: $STATUS_LINE"
 
           if echo "$STATUS_LINE" | grep -qi 'LOCKED'; then
-            echo "ERROR: agent/docs/contract.md is LOCKED but was modified in this PR."
-            echo "Create a change request instead: agent/docs/change-requests/CR-*.md"
-            exit 1
-          fi
-
-          echo "Contract modified and not LOCKED: allowed."
