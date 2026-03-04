@@ -1,75 +1,88 @@
-# Contract: Review Agent (LOCKED)
+# Review Agent Contract
 
-Status: LOCKED
-Contract-Version: v0.1.0
+## 목적
+- CLI 및 Action이 생성하는 결과물의 JSON 구조를 고정한다.
+- 외부 툴(대시보드, 후처리, 통계)이 이 계약에 의존한다.
 
-> 이 문서는 “코더(Claude)”가 반드시 지켜야 하는 계약이다.
-> LOCKED 상태에서는 이 파일을 직접 수정하지 않는다.
-> 변경이 필요하면 `agent/docs/change-requests/CR-*.md`로 요청한다.
+## Files
+- out/review_result.json  (필수)
+- out/review_report.md    (필수)
 
 ---
 
-## 1. Trigger & Runtime
-- 트리거(최소 1개 지원)
-  - GitHub Actions: pull_request 이벤트에서 실행
-- 런타임
-  - Node.js 또는 Python 중 1개를 선택(초기에는 Node 권장)
-  - 결과 산출물은 `agent/out/`에 저장 가능해야 한다.
+## out/review_result.json (Schema v1)
 
-## 2. Inputs Contract
-에이전트는 최소한 아래 입력을 처리한다.
+### Top-level
+- meta: 실행 메타데이터
+- inputs: 입력 요약(변경 파일 수, diff 크기 등)
+- doccheck: 규칙 기반 검사 결과
+- llm_review: LLM 리뷰 결과(이슈 리스트)
+- summary: 요약 통계 및 권장 액션
 
-### 2.1 PR Context
-- PR title/body
-- changed files list
-- diff patch (가능하면)
+### Types
 
-### 2.2 Docs Context
-- 필수 문서:
-  - `agent/docs/spec.md`
-  - `agent/docs/contract.md`
-  - `agent/docs/acceptance.md`
-- 옵션 문서:
-  - `README.md`
-  - `docs/**/*.md` 또는 `.github/**/*.md`
+#### Meta
+- tool_name: string (e.g. "review-agent")
+- tool_version: string (semver)
+- run_id: string (UUID 권장)
+- timestamp: string (ISO-8601)
+- repo: string (owner/name, optional)
+- pr_number: number | null
+- base_sha: string
+- head_sha: string
+- config_path: string | null
+- mode: "diff_only" | "full_files"
+- status: "ok" | "warning" | "error"
 
-## 3. Output Contract
-### 3.1 Machine-readable JSON (필수)
-- 경로: `agent/out/review_result.json`
-- 스키마(최소 필드):
-  - `verdict`: "PASS" | "WARN" | "FAIL"
-  - `experts`: array of
-    - `name`: "maintainer" | "security" | "docs"
-    - `findings`: array of
-      - `severity`: "LOW" | "MEDIUM" | "HIGH"
-      - `title`: string
-      - `description`: string
-      - `evidence`: array of string (CODE/DOC 근거)
-      - `recommendation`: string
-  - `doc_updates_needed`: array of
-    - `doc_path`: string
-    - `reason`: string
-    - `evidence`: array of string
-  - `questions`: array of string (UNCLEAR 항목 질문)
-  - `metadata`: object (PR 번호, commit sha 등)
+#### Inputs
+- changed_files: number
+- included_files: number
+- excluded_files: number
+- diff_chars: number
+- limits:
+  - max_changed_files: number
+  - max_diff_chars: number
+- excluded_reasons: array of
+  - path: string
+  - reason: "excluded_glob" | "too_large" | "binary" | "redaction_block" | "unknown"
 
-### 3.2 Human-readable Markdown (권장)
-- 경로: `agent/out/review_report.md`
-- 포함:
-  - 요약 verdict + Top action items
-  - 3 전문가 섹션
-  - 문서 업데이트 필요 목록
-  - 질문 리스트
+#### DocCheck
+- passed: boolean
+- findings: array of Finding
 
-## 4. Evidence Rules (필수)
-- 모든 finding/문서 업데이트 필요 항목은 근거(evidence)를 포함해야 한다.
-- evidence는 아래 형식 중 하나:
-  - `CODE: path/to/file: L10-L40`
-  - `DOC: path/to/doc.md > Some Header`
-- 근거가 없으면 finding을 만들지 말고 `questions`로 넘긴다.
+#### LLM Review
+- findings: array of Finding
+- model: string (e.g. "gpt-4.1-mini", "claude-3-5-sonnet" 등 사용 모델명)
+- tokens:
+  - prompt: number | null
+  - completion: number | null
+  - total: number | null
 
-## 5. Non-goals / Safety
-- 자동 커밋/푸시 금지(MVP)
-- 비밀정보(키/토큰) 출력 금지
+#### Finding (공통)
+- id: string (stable hash 권장)
+- severity: "BLOCKER" | "MAJOR" | "MINOR" | "NIT"
+- category: "doc" | "api" | "security" | "bug" | "performance" | "test" | "style" | "build" | "other"
+- title: string
+- detail: string
+- suggestion: string | null
+- path: string | null
+- line_range:
+  - start: number | null
+  - end: number | null
+- patch: string | null  (diff code fence 포함 가능)
+- references: array of string | null
 
-# test change 
+#### Summary
+- counts:
+  - blocker: number
+  - major: number
+  - minor: number
+  - nit: number
+- recommended_action: "merge_blocked" | "needs_fix" | "ok"
+- highlights: string[]  (짧은 bullet 요약)
+
+---
+
+## Backward compatibility
+- major version가 바뀌면 필드 삭제/의미 변경 가능
+- minor version는 필드 추가만 허용(기존 필드 의미 변경 금지)

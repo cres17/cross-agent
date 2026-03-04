@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Review outputs
+out/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Claude Code internal files
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+*.swp
