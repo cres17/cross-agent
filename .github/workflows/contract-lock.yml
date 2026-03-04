@@ -1,0 +1,38 @@
+name: Contract Lock Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  contract-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes to locked contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          echo "Base: $BASE_SHA"
+          echo "Head: $HEAD_SHA"
+
+          # Check if contract file changed in this PR
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -E '^docs/contract\.md$' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No changes to docs/contract.md"
+            exit 0
+          fi
+
+          # If changed, ensure Status is not LOCKED in the HEAD version
+          STATUS_LINE=$(grep -E '^Status:\s*' docs/contract.md || true)
+          echo "contract status line: $STATUS_LINE"
+
+          if echo "$STATUS_LINE" | grep -qi 'LOCKED'; then

@@ -1,0 +1,12 @@
+{
+  "title": "feat: add JWT-based authentication endpoint",
+  "body": "Adds login endpoint with JWT tokens.\n- POST /auth/login returns a signed JWT\n- Middleware validates token on protected routes\n\nCloses #42.",
+  "number": 99,
+  "sha": "abc1234def5678",
+  "changed_files": [
+    "src/auth/login.js",
+    "src/middleware/auth.js",
+    "README.md"
+  ],
+  "diff": "--- a/src/auth/login.js\n+++ b/src/auth/login.js\n@@ -0,0 +1,18 @@\n+const jwt = require('jsonwebtoken');\n+const SECRET = process.env.JWT_SECRET;\n+\n+async function login(req, res) {\n+  const { username, password } = req.body;\n+  // TODO: validate inputs before use\n+  const user = await db.users.findOne({ username });\n+  if (!user || user.password !== password) {\n+    return res.status(401).json({ error: 'Unauthorized' });\n+  }\n+  const token = jwt.sign({ id: user.id, username }, SECRET, { expiresIn: '7d' });\n+  res.json({ token });\n+}\n+\n+module.exports = { login };\n--- a/src/middleware/auth.js\n+++ b/src/middleware/auth.js\n@@ -0,0 +1,14 @@\n+const jwt = require('jsonwebtoken');\n+const SECRET = process.env.JWT_SECRET;\n+\n+function requireAuth(req, res, next) {\n+  const token = req.headers['authorization']?.split(' ')[1];\n+  if (!token) return res.status(401).json({ error: 'No token' });\n+  try {\n+    req.user = jwt.verify(token, SECRET);\n+    next();\n+  } catch {\n+    res.status(403).json({ error: 'Invalid token' });\n+  }\n+}\n+\n+module.exports = { requireAuth };"
+}

@@ -1,0 +1,100 @@
+version: 1
+
+input:
+  mode: diff_only                # diff_only | full_files
+  max_changed_files: 60
+  max_diff_chars: 180000
+
+  include_globs:
+    - "**/*.ts"
+    - "**/*.js"
+    - "**/*.py"
+    - "**/*.go"
+    - "**/*.java"
+    - "**/*.kt"
+    - "**/*.md"
+    - "docs/**"
+
+  exclude_globs:
+    - "**/*.lock"
+    - "**/node_modules/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/*.min.*"
+    - "**/.env*"
+    - "**/*secret*"
+    - "**/*credential*"
+    - "**/*key*"
+    - "**/*.pem"
+    - "**/*.p12"
+
+redaction:
+  enable: true
+  patterns:
+    - "AKIA[0-9A-Z]{16}"                # AWS access key
+    - "-----BEGIN [A-Z ]+ KEY-----"     # PEM blocks
+    - "(?i)api[_-]?key\\s*[:=]\\s*\\S+" # naive api key patterns
+
+rules:
+  doccheck:
+    enable: true
+
+    doc_only_detection:
+      enable: true
+      severity: NIT
+      doc_globs:
+        - "**/*.md"
+        - "docs/**"
+
+    rules:
+      # R1: API/contract path changes require doc/spec/contract update
+      - id: "R1_API_DOCS"
+        enable: true
+        severity: MAJOR
+        category: doc
+        title: "API/contract 변경 감지: 문서/스펙/계약 업데이트 필요"
+        trigger_globs:
+          - "src/routes/**"
+          - "src/controllers/**"
+          - "src/api/**"
+          - "proto/**"
+          - "openapi/**"
+        require_any_of_globs:
+          - "README.md"
+          - "docs/**"
+          - "SPEC.md"
+          - "CONTRACT.md"
+          - "DOCHECK.md"
+
+      # R2: CLI changes require README/usage doc update
+      - id: "R2_CLI_README"
+        enable: true
+        severity: MAJOR
+        category: doc
+        title: "CLI 변경 감지: README/Usage 업데이트 필요"
+        trigger_globs:
+          - "src/cli/**"
+          - "packages/cli/**"
+        require_any_of_globs:
+          - "README.md"
+          - "docs/usage.md"
+          - "docs/**"
+
+      # R3: Rule/format/config changes recommend SPEC/CONTRACT update
+      - id: "R3_SPEC_CONTRACT"
+        enable: true
+        severity: MINOR
+        category: doc
+        title: "리뷰 규칙/출력/설정 변경 감지: SPEC/CONTRACT 업데이트 권장"
+        trigger_globs:
+          - "src/rules/**"
+          - "src/format/**"
+          - "src/config/**"
+        require_any_of_globs:
+          - "SPEC.md"
+          - "CONTRACT.md"
+          - "DOCHECK.md"
+
+output:
+  comment_mode: pr_comment   # pr_comment | pr_review | none
+  artifact: true

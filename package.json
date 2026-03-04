@@ -1,0 +1,23 @@
+{
+  "name": "pr-review-agent",
+  "version": "0.1.0",
+  "description": "Docs-aware PR Review Agent (MVP)",
+  "main": "src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "doccheck": "node dist/cli.js",
+    "review": "node src/index.js",
+    "review:mock": "node src/index.js --mock"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.0",
+    "js-yaml": "^4.1.0",
+    "minimatch": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/minimatch": "^5.1.2",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}
