@@ -1,7 +1,35 @@
 # PR Review Agent
 
-A self-hosted, BYOK (Bring Your Own Key) pull request review agent powered by Claude.
-Runs as a GitHub Actions workflow — no SaaS subscription, no data sent to third-party servers beyond Anthropic's API.
+A third-party Claude CLI that reviews pull requests against your project's documentation — and checks whether your docs need to be updated when code changes.
+
+---
+
+## Why I Built This
+
+Every development team writes documentation: specs, API contracts, README files, runbooks.
+But in practice, **code and docs drift apart almost immediately after the first release.**
+
+A developer updates `src/routes/user.ts` and forgets to update `docs/api.md`.
+Another developer reads the outdated doc, builds on the wrong assumption, and the bug compounds.
+Code review catches logic errors, but almost no one systematically catches documentation drift in PRs.
+
+I wanted a tool that acts as a **neutral third-party reviewer** — not a teammate who might be too polite to flag missing doc updates, but an automated agent with no social hesitation.
+
+The agent has two jobs:
+
+1. **Be a documentation watchdog.** When code in a sensitive area changes, enforce that the relevant documentation changes too. This is deterministic, rule-based, and runs even without an LLM — because the rule "if routes change, docs must change" doesn't need AI to evaluate.
+
+2. **Be a code reviewer.** When there is an API key, send the sanitized diff to Claude and get a structured second opinion: bugs, security issues, missing tests, API contract mismatches. Not to replace human review, but to catch the things that slip through at 11pm on a Friday.
+
+---
+
+## What Effect I Expect
+
+**Short term** — PRs that touch API endpoints, CLI commands, or configuration will no longer silently skip documentation updates. The CI job fails with a clear finding pointing to exactly which files were changed and which docs were not updated.
+
+**Medium term** — Teams build a habit. When developers know the agent will catch documentation drift, they start updating docs proactively rather than retroactively. The rule configuration (`.reviewagent.yml`) becomes a living record of the team's own standards for what counts as "documentation-worthy" code.
+
+**Long term** — The structured JSON output (`out/review_result.json`) can feed into dashboards, statistics, and trend tracking. How often does the team have MAJOR findings? Which areas of the codebase drift most frequently? That data becomes visible.
 
 ---
 
@@ -9,37 +37,16 @@ Runs as a GitHub Actions workflow — no SaaS subscription, no data sent to thir
 
 Every time a PR is opened or updated, the agent runs two independent review passes:
 
-**Pass 1 — DocCheck (rule-based, always free)**
-Statically checks whether the PR triggers documentation update requirements — no LLM call needed.
+**Pass 1 — DocCheck (rule-based, no LLM)**
+Checks whether the PR triggers documentation update requirements using glob rules defined in `.reviewagent.yml`.
 Example: if `src/routes/user.ts` changes but `README.md` does not, a MAJOR finding is emitted.
+This pass always runs — it costs nothing and has no external dependencies.
 
 **Pass 2 — LLM Review (Claude API, BYOK)**
-Sends the sanitized diff to Claude and receives structured findings: bugs, security risks, performance issues, missing tests, API contract mismatches, documentation inconsistencies.
+Sends the sanitized diff to Claude and returns structured findings: bugs, security risks, performance issues, missing tests, API contract mismatches, documentation inconsistencies.
+This pass runs only when `ANTHROPIC_API_KEY` is set.
 
-Both passes produce a unified JSON result (`out/review_result.json`) following a stable contract schema, and a human-readable markdown report (`out/review_report.md`).
-
----
-
-## How It Compares
-
-| Feature | This Agent | CodeRabbit | GitHub Copilot PR Review | DIY LLM Script |
-|---|---|---|---|---|
-| Self-hosted | ✅ | ❌ SaaS | ❌ SaaS | ✅ |
-| BYOK (your API key) | ✅ | ❌ | ❌ | ✅ |
-| No subscription fee | ✅ | ❌ $12–$19/mo | ❌ Copilot plan | ✅ |
-| Rule-based DocCheck (no LLM) | ✅ | ❌ | ❌ | ❌ |
-| Config-driven rules (YAML) | ✅ `.reviewagent.yml` | Limited | ❌ | ❌ |
-| Stable output contract (JSON) | ✅ v1 schema | ❌ | ❌ | ❌ |
-| Secret redaction before LLM | ✅ | Unknown | Unknown | Manual |
-| Fork PR safe | ✅ (LLM disabled) | N/A | N/A | ❌ |
-| Works without LLM key | ✅ (DocCheck only) | ❌ | ❌ | ❌ |
-| Open source, auditable | ✅ | ❌ | ❌ | ✅ |
-
-**Key differentiators:**
-- **DocCheck runs even if you have no API key** — the rule-based gate is completely free and deterministic.
-- **You own the data flow.** The only external call is to Anthropic's API, with secrets already stripped.
-- **Stable contract output** enables downstream tools (dashboards, statistics, CI gates) to parse results reliably across versions.
-- **Per-repo customization** via `.reviewagent.yml` — define which file changes require which doc updates, without touching any code.
+Both passes produce a unified JSON result (`out/review_result.json`) with a stable schema, and a human-readable markdown report (`out/review_report.md`).
 
 ---
 
