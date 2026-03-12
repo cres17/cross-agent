@@ -1,186 +1,187 @@
 # PR Review Agent
 
-A third-party Claude CLI that reviews pull requests against your project's documentation — and checks whether your docs need to be updated when code changes.
+프로젝트 문서를 기준으로 풀 리퀘스트를 리뷰하는 서드파티 Claude CLI 도구 —
+코드 변경 시 문서도 함께 업데이트해야 하는지 자동으로 감지합니다.
 
 ---
 
-## Why I Built This
+## 제작 동기
 
-Every development team writes documentation: specs, API contracts, README files, runbooks.
-But in practice, **code and docs drift apart almost immediately after the first release.**
+모든 개발팀은 문서를 작성합니다: 스펙, API 계약, README, 런북.
+하지만 현실에서 **코드와 문서는 첫 릴리즈 직후부터 벌어지기 시작합니다.**
 
-A developer updates `src/routes/user.ts` and forgets to update `docs/api.md`.
-Another developer reads the outdated doc, builds on the wrong assumption, and the bug compounds.
-Code review catches logic errors, but almost no one systematically catches documentation drift in PRs.
+개발자가 `src/routes/user.ts`를 수정하면서 `docs/api.md` 업데이트를 깜빡합니다.
+다른 개발자는 outdated 문서를 읽고 잘못된 가정 위에서 작업하고, 버그는 복리로 쌓입니다.
+코드 리뷰는 로직 오류를 잡지만, PR에서 문서 드리프트를 체계적으로 잡는 사람은 거의 없습니다.
 
-I wanted a tool that acts as a **neutral third-party reviewer** — not a teammate who might be too polite to flag missing doc updates, but an automated agent with no social hesitation.
+이 도구는 **중립적인 서드파티 리뷰어** 역할을 합니다 — 문서 업데이트를 지적하기 너무 눈치 보이는 팀원이 아닌, 사회적 망설임이 없는 자동화 에이전트입니다.
 
-The agent has two jobs:
+에이전트의 역할은 두 가지입니다:
 
-1. **Be a documentation watchdog.** When code in a sensitive area changes, enforce that the relevant documentation changes too. This is deterministic, rule-based, and runs even without an LLM — because the rule "if routes change, docs must change" doesn't need AI to evaluate.
+1. **문서 감시자.** 민감한 영역의 코드가 변경될 때, 관련 문서도 함께 변경됐는지 강제합니다. 결정론적이고 규칙 기반이며, LLM 없이도 동작합니다 — "라우트가 바뀌면 문서도 바뀌어야 한다"는 규칙은 AI 없이도 판단 가능하기 때문입니다.
 
-2. **Be a code reviewer.** When there is an API key, send the sanitized diff to Claude and get a structured second opinion: bugs, security issues, missing tests, API contract mismatches. Not to replace human review, but to catch the things that slip through at 11pm on a Friday.
-
----
-
-## What Effect I Expect
-
-**Short term** — PRs that touch API endpoints, CLI commands, or configuration will no longer silently skip documentation updates. The CI job fails with a clear finding pointing to exactly which files were changed and which docs were not updated.
-
-**Medium term** — Teams build a habit. When developers know the agent will catch documentation drift, they start updating docs proactively rather than retroactively. The rule configuration (`.reviewagent.yml`) becomes a living record of the team's own standards for what counts as "documentation-worthy" code.
-
-**Long term** — The structured JSON output (`out/review_result.json`) can feed into dashboards, statistics, and trend tracking. How often does the team have MAJOR findings? Which areas of the codebase drift most frequently? That data becomes visible.
+2. **코드 리뷰어.** API 키가 있으면, 정제된 diff를 Claude에 보내고 구조화된 의견을 받습니다: 버그, 보안 이슈, 테스트 누락, API 계약 불일치. 사람 리뷰를 대체하는 것이 아니라, 금요일 오후 11시에 슬쩍 지나치는 것들을 잡기 위해 존재합니다.
 
 ---
 
-## What It Does
+## 기대 효과
 
-Every time a PR is opened or updated, the agent runs two independent review passes:
+**단기** — API 엔드포인트, CLI 커맨드, 설정을 건드리는 PR이 더 이상 문서 업데이트를 조용히 건너뛰지 않습니다. CI 작업이 어떤 파일이 변경됐고 어떤 문서가 업데이트되지 않았는지 명확히 지적하며 실패합니다.
 
-**Pass 1 — DocCheck (rule-based, no LLM)**
-Checks whether the PR triggers documentation update requirements using glob rules defined in `.reviewagent.yml`.
-Example: if `src/routes/user.ts` changes but `README.md` does not, a MAJOR finding is emitted.
-This pass always runs — it costs nothing and has no external dependencies.
+**중기** — 팀에 습관이 생깁니다. 에이전트가 문서 드리프트를 잡는다는 걸 알면, 개발자들은 사후 대응이 아닌 사전 예방으로 문서를 업데이트하기 시작합니다. 규칙 설정 파일(`.reviewagent.yml`)은 팀 자체 기준 — "어떤 코드가 문서화 대상인가" — 을 기록하는 살아있는 문서가 됩니다.
 
-**Pass 2 — LLM Review (Claude API, BYOK)**
-Sends the sanitized diff to Claude and returns structured findings: bugs, security risks, performance issues, missing tests, API contract mismatches, documentation inconsistencies.
-This pass runs only when `ANTHROPIC_API_KEY` is set.
-
-Both passes produce a unified JSON result (`out/review_result.json`) with a stable schema, and a human-readable markdown report (`out/review_report.md`).
+**장기** — 구조화된 JSON 출력(`out/review_result.json`)을 대시보드, 통계, 트렌드 추적에 연결할 수 있습니다. 팀에서 MAJOR 발견이 얼마나 자주 발생하나? 코드베이스의 어느 영역이 가장 자주 드리프트하나? 그 데이터가 가시화됩니다.
 
 ---
 
-## Quick Start
+## 동작 방식 개요
 
-### 1. Copy this repository
+PR이 열리거나 업데이트될 때마다 에이전트는 두 가지 독립적인 리뷰 패스를 실행합니다:
+
+**패스 1 — DocCheck (규칙 기반, LLM 없음)**
+`.reviewagent.yml`에 정의된 글로브 규칙을 사용해 PR이 문서 업데이트 요건을 트리거하는지 확인합니다.
+예시: `src/routes/user.ts`가 변경됐는데 `README.md`는 변경되지 않은 경우, MAJOR 발견이 생성됩니다.
+이 패스는 항상 실행됩니다 — 비용 없음, 외부 의존성 없음.
+
+**패스 2 — LLM 리뷰 (Claude API, BYOK)**
+정제된 diff를 Claude에 전송하고 구조화된 발견 사항을 반환합니다: 버그, 보안 위험, 성능 이슈, 테스트 누락, API 계약 불일치, 문서 불일치.
+이 패스는 `ANTHROPIC_API_KEY`가 설정된 경우에만 실행됩니다.
+
+두 패스 모두 안정적인 스키마를 가진 통합 JSON 결과(`out/review_result.json`)와 사람이 읽을 수 있는 마크다운 리포트(`out/review_report.md`)를 생성합니다.
+
+---
+
+## 빠른 시작
+
+### 1. 레포지토리 복사
 
 ```bash
 git clone https://github.com/your-org/pr-review-agent.git
 cd pr-review-agent
 ```
 
-Or use it as a template: click **Use this template** → Create repository.
+또는 템플릿으로 사용: **Use this template** → Create repository 클릭.
 
-### 2. Add your Anthropic API key
+### 2. Anthropic API 키 등록
 
-Go to your repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+레포지토리 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret** 이동
 
-| Secret name | Value |
+| 시크릿 이름 | 값 |
 |---|---|
 | `ANTHROPIC_API_KEY` | `sk-ant-api03-...` |
 
-`GITHUB_TOKEN` is provided automatically by GitHub Actions — no setup needed.
+`GITHUB_TOKEN`은 GitHub Actions가 자동으로 제공하므로 별도 설정이 필요 없습니다.
 
-### 3. Open a pull request
+### 3. 풀 리퀘스트 열기
 
-The workflow triggers automatically on `pull_request` (opened, synchronize, reopened).
-Review results are uploaded as a workflow artifact (`out/review_result.json`, `out/review_report.md`).
+워크플로우는 `pull_request` 이벤트(opened, synchronize, reopened)에서 자동으로 트리거됩니다.
+리뷰 결과는 워크플로우 아티팩트(`out/review_result.json`, `out/review_report.md`)로 업로드됩니다.
 
 ---
 
-## How It Works
+## 동작 흐름
 
 ```
-PR opened / updated
+PR 열림 / 업데이트
         │
         ▼
 ┌───────────────────────────────────────────────┐
-│  1. Load config (.reviewagent.yml + env vars) │
-│  2. Detect fork PR → disable LLM if fork      │
-│  3. Resolve base/head SHA                     │
-│  4. Collect changed files (git diff)          │
+│  1. 설정 로드 (.reviewagent.yml + 환경 변수)  │
+│  2. 포크 PR 감지 → 포크인 경우 LLM 비활성화  │
+│  3. base/head SHA 확인                        │
+│  4. 변경 파일 수집 (git diff)                 │
 └───────────────────┬───────────────────────────┘
                     │
           ┌─────────▼─────────┐
-          │  Pass 1: DocCheck │  ← always runs, no LLM, free
-          │  (rule engine)    │
+          │  패스 1: DocCheck │  ← 항상 실행, LLM 없음, 무료
+          │  (규칙 엔진)      │
           └─────────┬─────────┘
                     │
           ┌─────────▼──────────────┐
-          │  Filter + Redact diff  │  ← strip secrets, exclude sensitive files
+          │  diff 필터 + 난독화    │  ← 시크릿 제거, 민감 파일 제외
           └─────────┬──────────────┘
                     │
           ┌─────────▼─────────┐
-          │  Pass 2: LLM      │  ← Claude API (BYOK), skipped if no key
+          │  패스 2: LLM      │  ← Claude API (BYOK), 키 없으면 스킵
           │  (claude-opus-4-6)│
           └─────────┬─────────┘
                     │
           ┌─────────▼─────────────────────────┐
-          │  Build Summary                    │
+          │  요약 생성                        │
           │  recommended_action:              │
           │    merge_blocked / needs_fix / ok │
           └─────────┬─────────────────────────┘
                     │
           ┌─────────▼──────────────────────┐
-          │  Write outputs                 │
+          │  출력 파일 작성                 │
           │  out/review_result.json  (v1)  │
           │  out/review_report.md          │
           └────────────────────────────────┘
                     │
-          exit 1 (merge_blocked) or 0 (ok / needs_fix)
+          exit 1 (merge_blocked) 또는 0 (ok / needs_fix)
 ```
 
 ---
 
-## Project Structure
+## 프로젝트 구조
 
 ```
 pr-review-agent/
 ├── src/
-│   ├── cli.ts             # Main pipeline orchestrator (entry point)
-│   ├── config.ts          # .reviewagent.yml + env var loader
-│   ├── doccheck.ts        # Rule-based doc/contract check engine
-│   ├── git.ts             # SHA resolution, changed files, diff
-│   ├── glob.ts            # Built-in glob matcher (zero dependencies)
-│   ├── llm.ts             # Claude API call + prompt template
-│   ├── mapper.ts          # Normalize LLM response → contract schema
-│   ├── redact.ts          # Sensitive file filter + secret masking
-│   └── review_result.ts   # Contract v1 TypeScript types + buildSummary
+│   ├── cli.ts             # 메인 파이프라인 오케스트레이터 (진입점)
+│   ├── config.ts          # .reviewagent.yml + 환경 변수 로더
+│   ├── doccheck.ts        # 규칙 기반 문서/계약 체크 엔진
+│   ├── git.ts             # SHA 확인, 변경 파일, diff
+│   ├── glob.ts            # 내장 글로브 매처 (의존성 없음)
+│   ├── llm.ts             # Claude API 호출 + 프롬프트 템플릿
+│   ├── mapper.ts          # LLM 응답 → 계약 스키마 정규화
+│   ├── redact.ts          # 민감 파일 필터 + 시크릿 마스킹
+│   └── review_result.ts   # 계약 v1 TypeScript 타입 + buildSummary
 │
-├── .reviewagent.yml       # Your config: rules, globs, redaction, output mode
+├── .reviewagent.yml       # 설정: 규칙, 글로브, 난독화, 출력 모드
 │
 ├── .github/
 │   └── workflows/
-│       ├── review-agent.yml     # Main GitHub Actions workflow
-│       └── contract-lock.yml    # Integrity check for docs/contract.md
+│       ├── review-agent.yml     # 메인 GitHub Actions 워크플로우
+│       └── contract-lock.yml    # docs/contract.md 무결성 체크
 │
 ├── docs/
-│   ├── spec.md            # Design specification
-│   ├── contract.md        # Output JSON contract (v1, locked)
-│   └── acceptance.md      # Acceptance criteria
+│   ├── spec.md            # 설계 명세
+│   ├── contract.md        # 출력 JSON 계약 (v1, 잠금)
+│   └── acceptance.md      # 인수 기준
 │
 ├── test/
-│   └── run_tests.mjs      # 59 test cases (zero npm dependencies)
+│   └── run_tests.mjs      # 59개 테스트 케이스 (npm 의존성 없음)
 │
-├── out/                   # Generated outputs (git-ignored)
+├── out/                   # 생성된 출력 파일 (git 무시)
 │   ├── review_result.json
 │   └── review_report.md
 │
-├── .env.example           # Environment variable reference
+├── .env.example           # 환경 변수 참고
 ├── package.json
 └── tsconfig.json
 ```
 
 ---
 
-## Configuration
+## 설정
 
-All behavior is controlled via `.reviewagent.yml` at the repository root.
+모든 동작은 레포지토리 루트의 `.reviewagent.yml`로 제어됩니다.
 
 ```yaml
 version: 1
 
 input:
   mode: diff_only          # diff_only | full_files
-  max_changed_files: 60    # skip files beyond this count
-  max_diff_chars: 180000   # truncate diff sent to LLM
+  max_changed_files: 60    # 이 수를 초과하는 파일은 건너뜀
+  max_diff_chars: 180000   # LLM에 전송되는 diff 최대 문자 수
 
-  include_globs:           # only these files are analyzed
+  include_globs:           # 이 파일들만 분석
     - "**/*.ts"
     - "**/*.py"
     - "**/*.md"
 
-  exclude_globs:           # always excluded from LLM input
+  exclude_globs:           # LLM 입력에서 항상 제외
     - "**/*.lock"
     - "**/node_modules/**"
     - "**/.env*"
@@ -188,14 +189,14 @@ input:
 
 redaction:
   enable: true
-  patterns:                # extra regex patterns to mask before LLM
-    - "AKIA[0-9A-Z]{16}"  # AWS access key
+  patterns:                # LLM 전송 전 마스킹할 추가 정규식 패턴
+    - "AKIA[0-9A-Z]{16}"  # AWS 액세스 키
 
 rules:
   doccheck:
     enable: true
 
-    doc_only_detection:    # emit NIT if only docs changed (informational)
+    doc_only_detection:    # 문서만 변경된 경우 NIT 생성 (정보성)
       enable: true
       severity: NIT
       doc_globs: ["**/*.md", "docs/**"]
@@ -205,35 +206,35 @@ rules:
         enable: true
         severity: MAJOR          # BLOCKER | MAJOR | MINOR | NIT
         category: doc
-        title: "API changed: docs update required"
-        trigger_globs:           # if any of these files change...
+        title: "API 변경: 문서 업데이트 필요"
+        trigger_globs:           # 이 파일들 중 하나라도 변경되면...
           - "src/routes/**"
           - "src/api/**"
-        require_any_of_globs:    # ...at least one of these must also change
+        require_any_of_globs:    # ...이 중 하나 이상도 변경되어야 함
           - "README.md"
           - "docs/**"
 
 output:
   comment_mode: pr_comment  # pr_comment | pr_review | none
-  artifact: true            # upload out/ as workflow artifact
+  artifact: true            # out/을 워크플로우 아티팩트로 업로드
 ```
 
-### DocCheck Rule Logic
+### DocCheck 규칙 로직
 
 ```
-IF any file matches trigger_globs
-AND no file matches require_any_of_globs
-THEN emit Finding(severity, category, title, references)
+IF trigger_globs에 매칭되는 파일이 하나라도 있고
+AND require_any_of_globs에 매칭되는 파일이 없으면
+THEN Finding(severity, category, title, references) 생성
 ```
 
-Rules are additive — multiple rules can fire on the same PR.
-Set `enable: false` on any rule to disable it without deleting it.
+규칙은 누적적입니다 — 같은 PR에서 여러 규칙이 동시에 발동할 수 있습니다.
+삭제하지 않고 비활성화하려면 `enable: false`를 설정하세요.
 
 ---
 
-## Output Contract (v1)
+## 출력 계약 (v1)
 
-`out/review_result.json` always follows this schema regardless of which features are active:
+`out/review_result.json`은 어떤 기능이 활성화되어 있든 항상 이 스키마를 따릅니다:
 
 ```json
 {
@@ -265,9 +266,9 @@ Set `enable: false` on any rule to disable it without deleting it.
         "id": "a3f8c1d2e4b56789",
         "severity": "MAJOR",
         "category": "doc",
-        "title": "API changed: docs update required",
-        "detail": "Trigger: 2 file(s), Required doc: 0 file(s)",
-        "suggestion": "Update README.md or docs/ to reflect the changes.",
+        "title": "API 변경: 문서 업데이트 필요",
+        "detail": "트리거: 파일 2개, 필수 문서: 파일 0개",
+        "suggestion": "변경 사항을 반영하여 README.md 또는 docs/를 업데이트하세요.",
         "path": null,
         "line_range": { "start": null, "end": null },
         "patch": null,
@@ -283,94 +284,94 @@ Set `enable: false` on any rule to disable it without deleting it.
   "summary": {
     "counts": { "blocker": 0, "major": 1, "minor": 0, "nit": 0 },
     "recommended_action": "needs_fix",
-    "highlights": ["[MAJOR] API changed: docs update required"]
+    "highlights": ["[MAJOR] API 변경: 문서 업데이트 필요"]
   }
 }
 ```
 
-### Severity and Recommended Action
+### 심각도 및 권장 조치
 
-| Severity | Meaning | `recommended_action` | Exit code |
+| 심각도 | 의미 | `recommended_action` | 종료 코드 |
 |---|---|---|---|
-| `BLOCKER` | Merge must not proceed | `merge_blocked` | `1` |
-| `MAJOR` | Significant risk or correctness issue | `needs_fix` | `0` |
-| `MINOR` | Improvement recommended | `ok` | `0` |
-| `NIT` | Stylistic or minor observation | `ok` | `0` |
+| `BLOCKER` | 머지 불가 | `merge_blocked` | `1` |
+| `MAJOR` | 심각한 위험 또는 정확성 문제 | `needs_fix` | `0` |
+| `MINOR` | 개선 권장 | `ok` | `0` |
+| `NIT` | 스타일 또는 사소한 관찰 | `ok` | `0` |
 
-**Finding IDs** are stable SHA-256 hashes derived from `(rule_id, severity, category, title, detail)`.
-The same inputs always produce the same ID — reliable for deduplication, tracking, and diffing across runs.
+**발견 ID**는 `(rule_id, severity, category, title, detail)`에서 파생된 안정적인 SHA-256 해시입니다.
+동일한 입력은 항상 동일한 ID를 생성합니다 — 중복 제거, 추적, 실행 간 비교에 신뢰할 수 있습니다.
 
 ---
 
-## Environment Variables
+## 환경 변수
 
-| Variable | Required | Default | Description |
+| 변수 | 필수 여부 | 기본값 | 설명 |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | For LLM | — | Your Anthropic API key. Without it, LLM review is skipped and DocCheck runs alone. |
-| `GITHUB_TOKEN` | For comments | Auto | Provided automatically by GitHub Actions. |
-| `REVIEW_MODE` | No | `diff_only` | `diff_only` or `full_files` — overrides YAML value. |
-| `MAX_DIFF_CHARS` | No | `180000` | Max diff characters sent to LLM. |
-| `MAX_CHANGED_FILES` | No | `60` | Max changed files processed. |
-| `LLM_MODEL` | No | `claude-opus-4-6` | Claude model ID to use. |
-| `LLM_ENABLED` | No | `true` | Set `false` to force DocCheck-only mode. |
-| `LLM_FAIL_ON_ERROR` | No | `false` | Set `true` to exit 1 if the Claude API call fails. |
+| `ANTHROPIC_API_KEY` | LLM 사용 시 필수 | — | Anthropic API 키. 없으면 LLM 리뷰 생략, DocCheck만 실행. |
+| `GITHUB_TOKEN` | 댓글 작성 시 | 자동 | GitHub Actions가 자동 제공. |
+| `REVIEW_MODE` | 선택 | `diff_only` | `diff_only` 또는 `full_files` — YAML 값 재정의. |
+| `MAX_DIFF_CHARS` | 선택 | `180000` | LLM에 전송되는 최대 diff 문자 수. |
+| `MAX_CHANGED_FILES` | 선택 | `60` | 처리할 최대 변경 파일 수. |
+| `LLM_MODEL` | 선택 | `claude-opus-4-6` | 사용할 Claude 모델 ID. |
+| `LLM_ENABLED` | 선택 | `true` | `false`로 설정 시 DocCheck 전용 모드 강제. |
+| `LLM_FAIL_ON_ERROR` | 선택 | `false` | `true`로 설정 시 Claude API 호출 실패 시 exit 1. |
 
 ---
 
-## Security
+## 보안
 
-### What gets sent to the LLM
+### LLM에 전송되는 내용
 
-Only the sanitized `git diff` is sent to Claude. Before sending, three stages run:
+Claude에는 정제된 `git diff`만 전송됩니다. 전송 전 세 단계를 거칩니다:
 
-**1. Path exclusion** — files matching `exclude_globs` or built-in sensitive patterns are removed:
+**1. 경로 제외** — `exclude_globs` 또는 내장 민감 패턴에 매칭되는 파일을 제거합니다:
 
 ```
 .env*   **/*credential*   **/*secret*   **/*key*
 dist/   build/            node_modules/ *.lock
 ```
 
-**2. Secret pattern masking** — the following are replaced with `[REDACTED]`:
+**2. 시크릿 패턴 마스킹** — 아래 패턴을 `[REDACTED]`로 교체합니다:
 
-| Pattern | Example |
+| 패턴 | 예시 |
 |---|---|
-| AWS access key | `AKIAIOSFODNN7EXAMPLE` |
+| AWS 액세스 키 | `AKIAIOSFODNN7EXAMPLE` |
 | JWT | `eyJhbGci...` |
-| PEM private key blocks | `-----BEGIN RSA PRIVATE KEY-----` |
-| GitHub PATs | `ghp_xxxx`, `ghs_xxxx` |
-| Generic `sk-` keys | `sk-ant-api03-...` (Anthropic, OpenAI, Stripe) |
-| Bearer tokens | `Authorization: Bearer xxxx` |
-| Generic key assignments | `api_key = "xxxx"` |
+| PEM 개인 키 블록 | `-----BEGIN RSA PRIVATE KEY-----` |
+| GitHub PAT | `ghp_xxxx`, `ghs_xxxx` |
+| 일반 `sk-` 키 | `sk-ant-api03-...` (Anthropic, OpenAI, Stripe) |
+| Bearer 토큰 | `Authorization: Bearer xxxx` |
+| 일반 키 할당 | `api_key = "xxxx"` |
 
-**3. Truncation** — if the redacted diff exceeds `max_diff_chars`, it is cut off with an appended notice. DocCheck is unaffected.
+**3. 잘라내기** — 난독화된 diff가 `max_diff_chars`를 초과하면, `[DIFF TRUNCATED]` 알림과 함께 잘립니다. DocCheck는 영향을 받지 않습니다.
 
-### Fork PRs
+### 포크 PR
 
-Fork PRs cannot access repository secrets. The agent detects this automatically via `GITHUB_EVENT_PATH` and disables the LLM call, while DocCheck continues to run safely using only git metadata.
+포크 PR은 레포지토리 시크릿에 접근할 수 없습니다. 에이전트는 `GITHUB_EVENT_PATH`를 통해 이를 자동으로 감지하고 LLM 호출을 비활성화하며, DocCheck는 git 메타데이터만 사용하여 계속 안전하게 실행됩니다.
 
 ---
 
-## Local Development
+## 로컬 개발
 
 ```bash
-# Install dependencies
+# 의존성 설치
 npm install
 
-# Compile TypeScript → dist/
+# TypeScript → dist/ 컴파일
 npm run build
 
-# Run 59 tests (zero npm dependencies, uses only Node.js built-ins)
+# 59개 테스트 실행 (npm 의존성 없음, Node.js 내장 모듈만 사용)
 node test/run_tests.mjs
 
-# Run DocCheck + LLM review (requires ANTHROPIC_API_KEY + git repo with commits)
+# DocCheck + LLM 리뷰 실행 (ANTHROPIC_API_KEY + 커밋이 있는 git 레포 필요)
 export ANTHROPIC_API_KEY=sk-ant-...
 npm run doccheck
 
-# Run the original JS-based pipeline with mock PR context
+# 목 PR 컨텍스트로 JS 기반 파이프라인 실행
 npm run review:mock
 ```
 
-### Test suite output
+### 테스트 스위트 출력
 
 ```
 === Suite 1: .reviewagent.yml structure ===      7/7  ✅
@@ -383,13 +384,13 @@ npm run review:mock
 Results: 59 passed, 0 failed / 59 total
 ```
 
-Tests use only `node:crypto`, `node:fs`, `node:path` — no npm install required to run them.
+테스트는 `node:crypto`, `node:fs`, `node:path`만 사용합니다 — 실행에 npm install이 필요 없습니다.
 
 ---
 
-## Customizing for Your Repository
+## 내 레포지토리에 맞게 커스터마이징
 
-### Add your own DocCheck rules
+### DocCheck 규칙 추가
 
 ```yaml
 # .reviewagent.yml
@@ -400,7 +401,7 @@ rules:
         enable: true
         severity: MAJOR
         category: doc
-        title: "Schema changed: migration docs required"
+        title: "스키마 변경: 마이그레이션 문서 필요"
         trigger_globs:
           - "prisma/**"
           - "migrations/**"
@@ -413,7 +414,7 @@ rules:
         enable: true
         severity: MINOR
         category: doc
-        title: "Infrastructure changed: runbook update recommended"
+        title: "인프라 변경: 런북 업데이트 권장"
         trigger_globs:
           - "terraform/**"
           - "helm/**"
@@ -423,18 +424,18 @@ rules:
           - "docs/ops/**"
 ```
 
-### Use a faster / cheaper model
+### 더 빠르고 저렴한 모델 사용
 
 ```bash
-# Via environment variable (GitHub Actions repository variable)
+# 환경 변수로 설정 (GitHub Actions 레포지토리 변수)
 LLM_MODEL=claude-haiku-4-5-20251001
 ```
 
-### Use as a hard CI gate
+### 하드 CI 게이트로 사용
 
-Add a branch protection rule requiring the `review` job to pass. The workflow exits `1` only on `BLOCKER` findings — `MAJOR` and below exit `0` so they are advisory, not blocking.
+`review` 작업 통과를 필수 조건으로 하는 브랜치 보호 규칙을 추가하세요. 워크플로우는 `BLOCKER` 발견 시에만 exit `1`을 반환합니다 — `MAJOR` 이하는 exit `0`이므로 강제가 아닌 권고로 동작합니다.
 
-### Run on push as well as PRs
+### PR 외에 push에서도 실행
 
 ```yaml
 # .github/workflows/review-agent.yml
@@ -447,46 +448,46 @@ on:
 
 ---
 
-## Exit Codes
+## 종료 코드
 
-| Code | Condition |
+| 코드 | 조건 |
 |---|---|
-| `0` | `recommended_action` is `ok` or `needs_fix` |
-| `1` | `recommended_action` is `merge_blocked` (at least one BLOCKER finding), or fatal runtime error |
+| `0` | `recommended_action`이 `ok` 또는 `needs_fix` |
+| `1` | `recommended_action`이 `merge_blocked` (BLOCKER 발견 하나 이상), 또는 치명적 런타임 오류 |
 
 ---
 
-## Requirements
+## 요구 사항
 
 - Node.js ≥ 20
 - npm ≥ 9
-- GitHub repository with Actions enabled
-- Anthropic API key (optional — DocCheck works without it)
+- Actions가 활성화된 GitHub 레포지토리
+- Anthropic API 키 (선택 사항 — DocCheck는 없어도 동작)
 
 ---
 
 ## FAQ
 
-**Q: Can I use a different LLM (OpenAI, Gemini)?**
-The LLM module (`src/llm.ts`) uses `@anthropic-ai/sdk`. To switch providers, replace the SDK call in `runLlmReview()` — the prompt template, output schema, and rest of the pipeline are provider-agnostic.
+**Q: 다른 LLM(OpenAI, Gemini)을 사용할 수 있나요?**
+LLM 모듈(`src/llm.ts`)은 `@anthropic-ai/sdk`를 사용합니다. 다른 프로바이더로 전환하려면 `runLlmReview()` 내 SDK 호출을 교체하면 됩니다 — 프롬프트 템플릿, 출력 스키마, 나머지 파이프라인은 프로바이더 독립적입니다.
 
-**Q: Does this store my code anywhere?**
-No. The only external call is to `api.anthropic.com`. Nothing is sent to any other server. All outputs are stored in `out/` locally or uploaded as GitHub Actions artifacts to your own repository.
+**Q: 내 코드가 어딘가에 저장되나요?**
+아니요. 외부 호출은 `api.anthropic.com`뿐입니다. 다른 서버에는 아무것도 전송되지 않습니다. 모든 출력은 `out/`에 로컬로 저장되거나, 여러분의 레포지토리에 GitHub Actions 아티팩트로 업로드됩니다.
 
-**Q: What if the LLM API call fails?**
-By default (`LLM_FAIL_ON_ERROR=false`), the agent logs the error, continues with DocCheck-only results, and exits `0`. Set `LLM_FAIL_ON_ERROR=true` to fail the workflow on Claude API errors.
+**Q: LLM API 호출이 실패하면 어떻게 되나요?**
+기본값(`LLM_FAIL_ON_ERROR=false`)으로는 에러를 로그하고, DocCheck 전용 결과로 계속 진행하며, exit `0`으로 종료합니다. Claude API 오류 시 워크플로우를 실패시키려면 `LLM_FAIL_ON_ERROR=true`로 설정하세요.
 
-**Q: How do I disable LLM and use only DocCheck?**
-Set `LLM_ENABLED=false` as a repository variable or environment variable. DocCheck always runs regardless of this setting.
+**Q: LLM을 비활성화하고 DocCheck만 사용하려면?**
+레포지토리 변수 또는 환경 변수로 `LLM_ENABLED=false`를 설정하세요. DocCheck는 이 설정과 무관하게 항상 실행됩니다.
 
-**Q: The diff is too large — what happens?**
-The diff is truncated at `max_diff_chars` (default 180,000 chars) with a `[DIFF TRUNCATED]` notice appended. The LLM receives the notice and is instructed to note insufficient information for omitted sections. DocCheck is unaffected (it only looks at file paths, not content).
+**Q: diff가 너무 크면 어떻게 되나요?**
+diff는 `max_diff_chars`(기본값 180,000자)에서 잘리며, `[DIFF TRUNCATED]` 알림이 추가됩니다. LLM은 이 알림을 받고 생략된 구간에 대해서는 정보가 부족함을 명시하도록 지시받습니다. DocCheck는 영향을 받지 않습니다(파일 경로만 확인하며 내용은 보지 않습니다).
 
-**Q: Can I parse `review_result.json` in my own scripts?**
-Yes. The schema is versioned (`meta.tool_version`) and follows the contract in `docs/contract.md`. Minor version bumps add fields only; major version bumps may change or remove fields.
+**Q: 내 스크립트에서 `review_result.json`을 파싱할 수 있나요?**
+네. 스키마는 버전이 관리됩니다(`meta.tool_version`). 마이너 버전 업데이트는 필드를 추가만 합니다; 메이저 버전 업데이트는 필드를 변경하거나 제거할 수 있습니다. 전체 계약은 `docs/contract.md`에서 확인하세요.
 
 ---
 
-## License
+## 라이선스
 
 MIT
