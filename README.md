@@ -1,81 +1,99 @@
 # PR Review Agent
 
-프로젝트 문서를 기준으로 풀 리퀘스트를 리뷰하는 서드파티 Claude CLI 도구 —
-코드 변경 시 문서도 함께 업데이트해야 하는지 자동으로 감지합니다.
+![Claude](https://img.shields.io/badge/Claude-claude--opus--4--6-D97757?logo=anthropic&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A520-339933?logo=node.js&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)
+
+프로젝트 문서를 기준으로 PR을 리뷰하고, 코드가 바뀌었을 때 문서도 같이 업데이트해야 하는지 자동으로 잡아주는 서드파티 Claude CLI 도구입니다.
 
 ---
 
-## 제작 동기
+## 왜 만들었나요?
 
-모든 개발팀은 문서를 작성합니다: 스펙, API 계약, README, 런북.
-하지만 현실에서 **코드와 문서는 첫 릴리즈 직후부터 벌어지기 시작합니다.**
+개발팀이라면 다들 문서를 씁니다. 스펙, API 계약서, README, 런북...
+근데 솔직히 **첫 릴리즈 이후로 코드와 문서가 따로 노는 건 어느 팀이나 마찬가지**잖아요.
 
-개발자가 `src/routes/user.ts`를 수정하면서 `docs/api.md` 업데이트를 깜빡합니다.
-다른 개발자는 outdated 문서를 읽고 잘못된 가정 위에서 작업하고, 버그는 복리로 쌓입니다.
-코드 리뷰는 로직 오류를 잡지만, PR에서 문서 드리프트를 체계적으로 잡는 사람은 거의 없습니다.
+`src/routes/user.ts` 고치면서 `docs/api.md` 업데이트하는 걸 깜빡하고,
+다른 팀원이 낡은 문서 믿고 작업하다가 버그가 쌓이는 그 흐름이요.
+코드 리뷰는 로직 실수를 잡아주지만, "문서 드리프트"를 PR 단계에서 체계적으로 잡는 건 사실상 아무도 안 하고 있고요.
 
-이 도구는 **중립적인 서드파티 리뷰어** 역할을 합니다 — 문서 업데이트를 지적하기 너무 눈치 보이는 팀원이 아닌, 사회적 망설임이 없는 자동화 에이전트입니다.
+그래서 **눈치 안 보고 지적해 주는 중립적인 리뷰어**가 필요했습니다. 팀원한테 "이 문서도 업데이트해야 하지 않아요?"라고 말하기 애매한 순간들, 이 에이전트한테 맡기면 됩니다.
 
-에이전트의 역할은 두 가지입니다:
+에이전트가 하는 일은 크게 두 가지예요:
 
-1. **문서 감시자.** 민감한 영역의 코드가 변경될 때, 관련 문서도 함께 변경됐는지 강제합니다. 결정론적이고 규칙 기반이며, LLM 없이도 동작합니다 — "라우트가 바뀌면 문서도 바뀌어야 한다"는 규칙은 AI 없이도 판단 가능하기 때문입니다.
+1. **문서 감시.** 민감한 코드 영역이 바뀌면, 관련 문서도 같이 바뀌었는지 확인합니다. 완전히 규칙 기반이라 LLM 없이도 돌아가요. "라우트 바뀌면 문서도 바뀌어야 한다"는 판단에 AI가 필요하진 않으니까요.
 
-2. **코드 리뷰어.** API 키가 있으면, 정제된 diff를 Claude에 보내고 구조화된 의견을 받습니다: 버그, 보안 이슈, 테스트 누락, API 계약 불일치. 사람 리뷰를 대체하는 것이 아니라, 금요일 오후 11시에 슬쩍 지나치는 것들을 잡기 위해 존재합니다.
-
----
-
-## 기대 효과
-
-**단기** — API 엔드포인트, CLI 커맨드, 설정을 건드리는 PR이 더 이상 문서 업데이트를 조용히 건너뛰지 않습니다. CI 작업이 어떤 파일이 변경됐고 어떤 문서가 업데이트되지 않았는지 명확히 지적하며 실패합니다.
-
-**중기** — 팀에 습관이 생깁니다. 에이전트가 문서 드리프트를 잡는다는 걸 알면, 개발자들은 사후 대응이 아닌 사전 예방으로 문서를 업데이트하기 시작합니다. 규칙 설정 파일(`.reviewagent.yml`)은 팀 자체 기준 — "어떤 코드가 문서화 대상인가" — 을 기록하는 살아있는 문서가 됩니다.
-
-**장기** — 구조화된 JSON 출력(`out/review_result.json`)을 대시보드, 통계, 트렌드 추적에 연결할 수 있습니다. 팀에서 MAJOR 발견이 얼마나 자주 발생하나? 코드베이스의 어느 영역이 가장 자주 드리프트하나? 그 데이터가 가시화됩니다.
+2. **코드 리뷰.** API 키가 있으면 정제된 diff를 Claude한테 보내서 구조화된 의견을 받아옵니다. 버그, 보안 이슈, 테스트 누락, API 계약 불일치 같은 것들이요. 사람 리뷰를 대체하는 게 아니라, 금요일 밤 11시 PR에서 슬쩍 넘어가는 것들을 한 번 더 잡아주는 역할입니다.
 
 ---
 
-## 동작 방식 개요
+## 어떤 효과를 기대하나요?
 
-PR이 열리거나 업데이트될 때마다 에이전트는 두 가지 독립적인 리뷰 패스를 실행합니다:
+**단기적으로는** — API 엔드포인트나 CLI 커맨드, 설정 파일이 바뀌었는데 문서를 안 고쳤다면, CI가 어떤 파일이 빠졌는지 콕 집어서 실패합니다. 더 이상 조용히 넘어가지 않아요.
+
+**중기적으로는** — 팀에 습관이 생깁니다. 에이전트가 어차피 잡는다는 걸 알면, 나중에 고치는 게 아니라 PR 올릴 때 미리 문서를 같이 업데이트하게 돼요. `.reviewagent.yml` 파일 자체가 팀의 "어떤 코드는 반드시 문서화되어야 한다"는 기준을 담은 살아있는 문서가 되고요.
+
+**장기적으로는** — `out/review_result.json`을 대시보드나 트렌드 추적에 연결할 수 있습니다. MAJOR 이슈가 얼마나 자주 나오는지, 코드베이스에서 어떤 영역이 가장 자주 문서와 멀어지는지, 그 흐름이 눈에 보이게 됩니다.
+
+---
+
+## 어떻게 동작하나요?
+
+PR이 열리거나 업데이트될 때마다 두 가지 리뷰 패스가 독립적으로 실행됩니다:
 
 **패스 1 — DocCheck (규칙 기반, LLM 없음)**
-`.reviewagent.yml`에 정의된 글로브 규칙을 사용해 PR이 문서 업데이트 요건을 트리거하는지 확인합니다.
-예시: `src/routes/user.ts`가 변경됐는데 `README.md`는 변경되지 않은 경우, MAJOR 발견이 생성됩니다.
-이 패스는 항상 실행됩니다 — 비용 없음, 외부 의존성 없음.
+`.reviewagent.yml`에 정의된 글로브 규칙으로 문서 업데이트 요건이 충족됐는지 확인합니다.
+예를 들어 `src/routes/user.ts`가 바뀌었는데 `README.md`는 그대로라면 MAJOR 발견이 생성돼요.
+항상 실행되고, 비용도 없고, 외부 의존성도 없습니다.
 
 **패스 2 — LLM 리뷰 (Claude API, BYOK)**
-정제된 diff를 Claude에 전송하고 구조화된 발견 사항을 반환합니다: 버그, 보안 위험, 성능 이슈, 테스트 누락, API 계약 불일치, 문서 불일치.
-이 패스는 `ANTHROPIC_API_KEY`가 설정된 경우에만 실행됩니다.
+정제된 diff를 Claude에 보내서 버그, 보안 위험, 성능 이슈, 테스트 누락, API 계약 불일치, 문서 불일치 등을 구조화된 형태로 받아옵니다.
+`ANTHROPIC_API_KEY`가 있을 때만 실행됩니다.
 
-두 패스 모두 안정적인 스키마를 가진 통합 JSON 결과(`out/review_result.json`)와 사람이 읽을 수 있는 마크다운 리포트(`out/review_report.md`)를 생성합니다.
+두 패스 모두 `out/review_result.json`(안정적인 스키마의 JSON)과 `out/review_report.md`(사람이 읽기 좋은 마크다운)로 결과를 통합해서 냅니다.
+
+---
+
+## 기술 스택
+
+| 영역 | 기술 |
+|---|---|
+| 런타임 | Node.js ≥ 20 |
+| 언어 | TypeScript |
+| LLM | Claude (Anthropic) — `claude-opus-4-6` 기본값 |
+| CI/CD | GitHub Actions |
+| 패키지 매니저 | npm ≥ 9 |
+| 테스트 | 자체 구현 (Node.js 내장 모듈만 사용, 의존성 없음) |
+| 외부 API | Anthropic API (`api.anthropic.com`), GitHub REST API |
 
 ---
 
 ## 빠른 시작
 
-### 1. 레포지토리 복사
+### 1. 레포지토리 가져오기
 
 ```bash
 git clone https://github.com/your-org/pr-review-agent.git
 cd pr-review-agent
 ```
 
-또는 템플릿으로 사용: **Use this template** → Create repository 클릭.
+또는 **Use this template** → Create repository로 템플릿 복사해서 바로 시작해도 됩니다.
 
 ### 2. Anthropic API 키 등록
 
-레포지토리 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret** 이동
+레포지토리 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
 | 시크릿 이름 | 값 |
 |---|---|
 | `ANTHROPIC_API_KEY` | `sk-ant-api03-...` |
 
-`GITHUB_TOKEN`은 GitHub Actions가 자동으로 제공하므로 별도 설정이 필요 없습니다.
+`GITHUB_TOKEN`은 GitHub Actions가 알아서 주입해 주니까 따로 설정 안 해도 됩니다.
 
-### 3. 풀 리퀘스트 열기
+### 3. PR 열기
 
-워크플로우는 `pull_request` 이벤트(opened, synchronize, reopened)에서 자동으로 트리거됩니다.
-리뷰 결과는 워크플로우 아티팩트(`out/review_result.json`, `out/review_report.md`)로 업로드됩니다.
+`pull_request` 이벤트(opened, synchronize, reopened)에서 워크플로우가 자동으로 트리거됩니다.
+리뷰 결과는 `out/review_result.json`, `out/review_report.md` 두 파일로 워크플로우 아티팩트에 올라갑니다.
 
 ---
 
@@ -166,7 +184,7 @@ pr-review-agent/
 
 ## 설정
 
-모든 동작은 레포지토리 루트의 `.reviewagent.yml`로 제어됩니다.
+모든 동작은 레포지토리 루트의 `.reviewagent.yml` 하나로 제어합니다.
 
 ```yaml
 version: 1
@@ -227,14 +245,14 @@ AND require_any_of_globs에 매칭되는 파일이 없으면
 THEN Finding(severity, category, title, references) 생성
 ```
 
-규칙은 누적적입니다 — 같은 PR에서 여러 규칙이 동시에 발동할 수 있습니다.
-삭제하지 않고 비활성화하려면 `enable: false`를 설정하세요.
+규칙은 누적 적용됩니다. 같은 PR에서 여러 규칙이 동시에 발동할 수 있어요.
+삭제하지 않고 잠깐 꺼두고 싶다면 `enable: false`를 쓰면 됩니다.
 
 ---
 
 ## 출력 계약 (v1)
 
-`out/review_result.json`은 어떤 기능이 활성화되어 있든 항상 이 스키마를 따릅니다:
+어떤 기능이 켜져 있든 꺼져 있든, `out/review_result.json`은 항상 이 스키마를 따릅니다:
 
 ```json
 {
@@ -298,8 +316,7 @@ THEN Finding(severity, category, title, references) 생성
 | `MINOR` | 개선 권장 | `ok` | `0` |
 | `NIT` | 스타일 또는 사소한 관찰 | `ok` | `0` |
 
-**발견 ID**는 `(rule_id, severity, category, title, detail)`에서 파생된 안정적인 SHA-256 해시입니다.
-동일한 입력은 항상 동일한 ID를 생성합니다 — 중복 제거, 추적, 실행 간 비교에 신뢰할 수 있습니다.
+**발견 ID**는 `(rule_id, severity, category, title, detail)` 조합에서 뽑은 SHA-256 해시라 입력이 같으면 항상 같은 ID가 나옵니다. 중복 제거, 추적, 실행 간 비교에 그대로 활용하면 됩니다.
 
 ---
 
@@ -313,25 +330,25 @@ THEN Finding(severity, category, title, references) 생성
 | `MAX_DIFF_CHARS` | 선택 | `180000` | LLM에 전송되는 최대 diff 문자 수. |
 | `MAX_CHANGED_FILES` | 선택 | `60` | 처리할 최대 변경 파일 수. |
 | `LLM_MODEL` | 선택 | `claude-opus-4-6` | 사용할 Claude 모델 ID. |
-| `LLM_ENABLED` | 선택 | `true` | `false`로 설정 시 DocCheck 전용 모드 강제. |
-| `LLM_FAIL_ON_ERROR` | 선택 | `false` | `true`로 설정 시 Claude API 호출 실패 시 exit 1. |
+| `LLM_ENABLED` | 선택 | `true` | `false`로 설정하면 DocCheck 전용 모드로 강제 전환. |
+| `LLM_FAIL_ON_ERROR` | 선택 | `false` | `true`로 설정하면 Claude API 실패 시 exit 1. |
 
 ---
 
 ## 보안
 
-### LLM에 전송되는 내용
+### Claude한테 뭘 보내나요?
 
-Claude에는 정제된 `git diff`만 전송됩니다. 전송 전 세 단계를 거칩니다:
+정제된 `git diff`만 전송합니다. 보내기 전에 세 단계를 거쳐요:
 
-**1. 경로 제외** — `exclude_globs` 또는 내장 민감 패턴에 매칭되는 파일을 제거합니다:
+**1. 경로 제외** — `exclude_globs`나 내장 민감 패턴에 걸리는 파일은 통째로 빠집니다:
 
 ```
 .env*   **/*credential*   **/*secret*   **/*key*
 dist/   build/            node_modules/ *.lock
 ```
 
-**2. 시크릿 패턴 마스킹** — 아래 패턴을 `[REDACTED]`로 교체합니다:
+**2. 시크릿 패턴 마스킹** — 아래 패턴은 `[REDACTED]`로 교체됩니다:
 
 | 패턴 | 예시 |
 |---|---|
@@ -343,15 +360,15 @@ dist/   build/            node_modules/ *.lock
 | Bearer 토큰 | `Authorization: Bearer xxxx` |
 | 일반 키 할당 | `api_key = "xxxx"` |
 
-**3. 잘라내기** — 난독화된 diff가 `max_diff_chars`를 초과하면, `[DIFF TRUNCATED]` 알림과 함께 잘립니다. DocCheck는 영향을 받지 않습니다.
+**3. 잘라내기** — 난독화 후에도 `max_diff_chars`를 넘으면 `[DIFF TRUNCATED]` 알림과 함께 잘립니다. DocCheck는 파일 경로만 보기 때문에 영향 없습니다.
 
-### 포크 PR
+### 포크 PR은요?
 
-포크 PR은 레포지토리 시크릿에 접근할 수 없습니다. 에이전트는 `GITHUB_EVENT_PATH`를 통해 이를 자동으로 감지하고 LLM 호출을 비활성화하며, DocCheck는 git 메타데이터만 사용하여 계속 안전하게 실행됩니다.
+포크 PR은 레포지토리 시크릿에 접근할 수 없어요. `GITHUB_EVENT_PATH`로 자동 감지해서 LLM 호출만 비활성화하고, DocCheck는 git 메타데이터만으로 계속 돌아갑니다.
 
 ---
 
-## 로컬 개발
+## 로컬에서 개발하기
 
 ```bash
 # 의존성 설치
@@ -371,7 +388,7 @@ npm run doccheck
 npm run review:mock
 ```
 
-### 테스트 스위트 출력
+### 테스트 결과
 
 ```
 === Suite 1: .reviewagent.yml structure ===      7/7  ✅
@@ -384,11 +401,11 @@ npm run review:mock
 Results: 59 passed, 0 failed / 59 total
 ```
 
-테스트는 `node:crypto`, `node:fs`, `node:path`만 사용합니다 — 실행에 npm install이 필요 없습니다.
+`node:crypto`, `node:fs`, `node:path`만 씁니다. npm install 없이 바로 돌릴 수 있어요.
 
 ---
 
-## 내 레포지토리에 맞게 커스터마이징
+## 내 레포에 맞게 커스터마이징하기
 
 ### DocCheck 규칙 추가
 
@@ -424,18 +441,18 @@ rules:
           - "docs/ops/**"
 ```
 
-### 더 빠르고 저렴한 모델 사용
+### 더 빠르고 저렴한 모델 쓰기
 
 ```bash
 # 환경 변수로 설정 (GitHub Actions 레포지토리 변수)
 LLM_MODEL=claude-haiku-4-5-20251001
 ```
 
-### 하드 CI 게이트로 사용
+### CI 게이트로 활용하기
 
-`review` 작업 통과를 필수 조건으로 하는 브랜치 보호 규칙을 추가하세요. 워크플로우는 `BLOCKER` 발견 시에만 exit `1`을 반환합니다 — `MAJOR` 이하는 exit `0`이므로 강제가 아닌 권고로 동작합니다.
+`review` 작업을 필수 통과 조건으로 설정하는 브랜치 보호 규칙을 추가하면 됩니다. `BLOCKER` 발견이 있을 때만 exit `1`이 나오고, `MAJOR` 이하는 exit `0`이라 권고로만 동작합니다.
 
-### PR 외에 push에서도 실행
+### PR 말고 push에서도 실행하기
 
 ```yaml
 # .github/workflows/review-agent.yml
@@ -453,7 +470,7 @@ on:
 | 코드 | 조건 |
 |---|---|
 | `0` | `recommended_action`이 `ok` 또는 `needs_fix` |
-| `1` | `recommended_action`이 `merge_blocked` (BLOCKER 발견 하나 이상), 또는 치명적 런타임 오류 |
+| `1` | `recommended_action`이 `merge_blocked` (BLOCKER 하나 이상), 또는 치명적 런타임 오류 |
 
 ---
 
@@ -461,30 +478,30 @@ on:
 
 - Node.js ≥ 20
 - npm ≥ 9
-- Actions가 활성화된 GitHub 레포지토리
-- Anthropic API 키 (선택 사항 — DocCheck는 없어도 동작)
+- GitHub Actions가 활성화된 레포지토리
+- Anthropic API 키 (선택 — DocCheck는 없어도 잘 돌아갑니다)
 
 ---
 
-## FAQ
+## 자주 묻는 질문
 
-**Q: 다른 LLM(OpenAI, Gemini)을 사용할 수 있나요?**
-LLM 모듈(`src/llm.ts`)은 `@anthropic-ai/sdk`를 사용합니다. 다른 프로바이더로 전환하려면 `runLlmReview()` 내 SDK 호출을 교체하면 됩니다 — 프롬프트 템플릿, 출력 스키마, 나머지 파이프라인은 프로바이더 독립적입니다.
+**Q: 다른 LLM(OpenAI, Gemini)으로 바꿀 수 있나요?**
+`src/llm.ts`의 `runLlmReview()` 안에 있는 SDK 호출 부분만 교체하면 됩니다. 프롬프트 템플릿, 출력 스키마, 나머지 파이프라인은 프로바이더에 묶여 있지 않아요.
 
-**Q: 내 코드가 어딘가에 저장되나요?**
-아니요. 외부 호출은 `api.anthropic.com`뿐입니다. 다른 서버에는 아무것도 전송되지 않습니다. 모든 출력은 `out/`에 로컬로 저장되거나, 여러분의 레포지토리에 GitHub Actions 아티팩트로 업로드됩니다.
+**Q: 내 코드가 외부 어딘가에 저장되나요?**
+아니요. 외부 호출은 `api.anthropic.com` 하나뿐이에요. 다른 서버로 나가는 건 없고, 모든 출력은 `out/` 폴더에 로컬 저장되거나 내 레포지토리의 GitHub Actions 아티팩트로 올라갑니다.
 
-**Q: LLM API 호출이 실패하면 어떻게 되나요?**
-기본값(`LLM_FAIL_ON_ERROR=false`)으로는 에러를 로그하고, DocCheck 전용 결과로 계속 진행하며, exit `0`으로 종료합니다. Claude API 오류 시 워크플로우를 실패시키려면 `LLM_FAIL_ON_ERROR=true`로 설정하세요.
+**Q: LLM API 호출이 실패하면요?**
+기본값(`LLM_FAIL_ON_ERROR=false`)에서는 에러를 로그하고 DocCheck 결과만으로 계속 진행해서 exit `0`으로 끝납니다. API 실패 시 워크플로우 자체를 실패시키고 싶다면 `LLM_FAIL_ON_ERROR=true`로 바꾸면 돼요.
 
-**Q: LLM을 비활성화하고 DocCheck만 사용하려면?**
-레포지토리 변수 또는 환경 변수로 `LLM_ENABLED=false`를 설정하세요. DocCheck는 이 설정과 무관하게 항상 실행됩니다.
+**Q: LLM 꺼놓고 DocCheck만 쓰고 싶어요.**
+`LLM_ENABLED=false`를 레포 변수나 환경 변수로 설정하면 됩니다. DocCheck는 이 설정과 무관하게 항상 실행돼요.
 
 **Q: diff가 너무 크면 어떻게 되나요?**
-diff는 `max_diff_chars`(기본값 180,000자)에서 잘리며, `[DIFF TRUNCATED]` 알림이 추가됩니다. LLM은 이 알림을 받고 생략된 구간에 대해서는 정보가 부족함을 명시하도록 지시받습니다. DocCheck는 영향을 받지 않습니다(파일 경로만 확인하며 내용은 보지 않습니다).
+`max_diff_chars`(기본 180,000자)에서 잘리고 `[DIFF TRUNCATED]` 알림이 붙습니다. Claude는 이 알림을 보고 잘린 구간에 대해서는 정보 부족을 명시합니다. DocCheck는 파일 경로만 보기 때문에 아무 영향 없어요.
 
-**Q: 내 스크립트에서 `review_result.json`을 파싱할 수 있나요?**
-네. 스키마는 버전이 관리됩니다(`meta.tool_version`). 마이너 버전 업데이트는 필드를 추가만 합니다; 메이저 버전 업데이트는 필드를 변경하거나 제거할 수 있습니다. 전체 계약은 `docs/contract.md`에서 확인하세요.
+**Q: `review_result.json`을 직접 파싱해서 써도 되나요?**
+네, 스키마는 버전 관리됩니다(`meta.tool_version`). 마이너 버전은 필드 추가만 하고, 메이저 버전은 필드 변경이나 삭제가 있을 수 있습니다. 전체 계약은 `docs/contract.md`에서 확인하세요.
 
 ---
 
