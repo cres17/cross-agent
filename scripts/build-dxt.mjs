@@ -16,11 +16,9 @@
 import { execSync }                          from 'child_process';
 import { existsSync, mkdirSync, rmSync,
          copyFileSync, readdirSync,
-         statSync, writeFileSync,
-         readFileSync }                      from 'fs';
+         statSync, writeFileSync }           from 'fs';
 import { join, resolve, dirname }            from 'path';
 import { fileURLToPath }                     from 'url';
-import { createHash }                        from 'crypto';
 
 const __dirname  = dirname(fileURLToPath(import.meta.url));
 const ROOT       = resolve(__dirname, '..');
@@ -127,28 +125,12 @@ if (isWindows) {
 
 log(`  생성 완료: pr-review-agent.dxt`);
 
-// ── Step 6: SHA256 해시 생성 ──────────────────────────────────────────────────
+// ── Step 6: 임시 디렉토리 정리 ────────────────────────────────────────────────
 
-log('Step 6: SHA256 해시 생성');
-const sha256 = createHash('sha256')
-  .update(readFileSync(OUTPUT))
-  .digest('hex');
-const hashFile = OUTPUT + '.sha256';
-writeFileSync(hashFile, `${sha256}  pr-review-agent.dxt\n`);
-log(`  SHA256: ${sha256}`);
-log(`  → pr-review-agent.dxt.sha256 저장`);
-
-// ── Step 7: 임시 디렉토리 정리 ────────────────────────────────────────────────
-
-log('Step 7: 임시 디렉토리 정리');
+log('Step 6: 임시 디렉토리 정리');
 rmSync(TEMP_DIR, { recursive: true, force: true });
 
 log('');
 log('✓ 빌드 완료!');
 log('');
-log('생성된 파일:');
-log('  pr-review-agent.dxt       ← Claude Desktop에 드래그앤드롭');
-log('  pr-review-agent.dxt.sha256 ← GitHub Release에 함께 첨부');
-log('');
-log('GitHub Release 생성 후:');
-log('  두 파일을 모두 Release Assets에 첨부하세요.');
+log('  pr-review-agent.dxt → GitHub Release에 첨부 또는 Claude Desktop에 드래그앤드롭');
