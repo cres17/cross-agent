@@ -4,6 +4,10 @@ node_modules/
 # Build output
 dist/
 
+# DXT packaging
+dxt-package/
+*.dxt
+
 # Review outputs
 out/
 

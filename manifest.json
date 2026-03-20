@@ -1,0 +1,36 @@
+{
+  "dxt_version": "0.1",
+  "name": "pr-review-agent",
+  "version": "0.1.0",
+  "description": "PR 리뷰 에이전트 — DocCheck(규칙 기반 문서 드리프트 감지) + 코드 리뷰. API 키 없이 Claude가 직접 분석합니다.",
+  "author": {
+    "name": "cres17"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cres17/cross-agent"
+  },
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "mcp-server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/mcp-server.mjs"]
+    }
+  },
+  "tools": [
+    {
+      "name": "run_doccheck",
+      "description": "규칙 기반 문서 드리프트 검사 (LLM 없음, 무료). .reviewagent.yml의 규칙에 따라 변경 파일이 문서 업데이트를 요구하는지 확인합니다."
+    },
+    {
+      "name": "get_pr_diff",
+      "description": "두 git ref 사이의 diff를 가져옵니다. 민감 파일 제거 및 시크릿 패턴 마스킹 후 반환하므로 Claude에게 직접 전달하기 안전합니다."
+    },
+    {
+      "name": "get_changed_files",
+      "description": "두 git ref 사이에서 변경된 파일 목록을 반환합니다."
+    }
+  ]
+}

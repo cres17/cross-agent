@@ -8,7 +8,8 @@
     "doccheck": "node dist/cli.js",
     "review": "node src/index.js",
     "review:mock": "node src/index.js --mock",
-    "mcp": "node dist/mcp-server.js"
+    "mcp": "node dist/mcp-server.js",
+    "build:dxt": "node scripts/build-dxt.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",
