@@ -12,8 +12,11 @@ out/
 .env.local
 .env.*.local
 
-# Claude Code internal files
-.claude/
+# Claude Code internal files (keep commands/ for slash command sharing)
+.claude/settings.json
+.claude/settings.local.json
+.claude/todos/
+memory/
 
 # OS
 .DS_Store
